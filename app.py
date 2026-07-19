@@ -1,5 +1,3 @@
-# Save the dashboard code into a local file called app.py inside the notebook environment
-%%writefile app.py
 # Install the missing package with the required '!' prefix for Colab
 !pip install streamlit -q
 
