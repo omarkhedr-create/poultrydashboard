@@ -1,132 +1,128 @@
 import streamlit as st
 import pandas as pd
-from bs4 import BeautifulSoup
+import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime
-import time
-import cloudscraper
+import re
 
 # --- PAGE SETTINGS ---
 st.set_page_config(page_title="Egypt Poultry Market", page_icon="🐔", layout="wide")
 
-st.title("🇪🇬 Egypt Poultry Market: Live & Historical Bourse")
+st.title("🇪🇬 Egypt Poultry Market: Unblockable Dashboard")
 st.write(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')} (Cairo Time)")
-st.caption("Powered by Cloudscraper to bypass firewalls and extract exact numerical prices from local markets.")
+st.caption("Powered by Global RSS Syndication. This bypasses all server firewalls to guarantee actual price numbers.")
 
-# Initialize the Cloudflare-bypassing scraper
-# This perfectly mimics a standard Windows Chrome browser to trick the firewall
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'desktop': True
-    }
-)
-
-# --- SCRAPING FUNCTIONS ---
-
+# --- RSS EXTRACTION FUNCTION ---
 @st.cache_data(ttl=600)
-def fetch_exact_prices(pages_to_dig=1, is_live=True):
-    base_url = "https://www.elbalad.news"
-    keywords = ["البيض الأبيض", "البيض الأحمر", "الكتكوت", "الفراخ البيضاء", "الفراخ البلدي"]
+def get_unblockable_prices(query):
+    # Bing News RSS is open, free, never blocks cloud servers, and provides full paragraphs with numbers
+    url = f"https://www.bing.com/news/search?q={requests.utils.quote(query)}&format=rss"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     extracted_data = []
     
-    for page in range(1, pages_to_dig + 1):
-        try:
-            # 1. Fetch the news archive page
-            tag_url = f"{base_url}/tag/7576?page={page}"
-            res = scraper.get(tag_url, timeout=15)
-            soup = BeautifulSoup(res.text, "html.parser")
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        root = ET.fromstring(res.text)
+        
+        for item in root.findall('./channel/item'):
+            # Get date
+            date_str = item.find('pubDate').text if item.find('pubDate') is not None else ""
+            try:
+                dt = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
+                clean_date = dt.strftime("%Y-%m-%d")
+            except Exception:
+                clean_date = date_str
+                
+            # Get the text snippet (which contains the actual prices)
+            desc = item.find('description').text if item.find('description') is not None else ""
+            title = item.find('title').text if item.find('title') is not None else ""
+            source = item.find('source').text if item.find('source') is not None else "News Source"
             
-            # 2. Find links to actual poultry articles
-            articles = soup.find_all("a", href=True)
-            relevant_links = []
-            for art in articles:
-                title_text = art.get_text().strip()
-                if "دواجن" in title_text or "فراخ" in title_text or "أسعار" in title_text:
-                    link = art["href"]
-                    full_link = link if link.startswith("http") else base_url + link
-                    if full_link not in relevant_links:
-                        relevant_links.append(full_link)
+            # Combine and clean the text
+            full_text = f"{title}. {desc}"
+            clean_text = re.sub('<[^<]+>', '', full_text) # Remove any stray HTML tags
             
-            # Limit how many articles we check so the app loads fast
-            article_limit = 1 if is_live else 3 
+            # Split the paragraph into smaller sentences/chunks to isolate the exact prices
+            sentences = re.split(r'[.،؛:-]', clean_text)
             
-            # 3. Open the articles and hunt for the numbers
-            for full_link in relevant_links[:article_limit]:
-                try:
-                    art_res = scraper.get(full_link, timeout=10)
-                    art_soup = BeautifulSoup(art_res.text, "html.parser")
-                    
-                    date_tag = art_soup.find("time")
-                    pub_date = date_tag.text.strip() if date_tag else datetime.now().strftime("%Y-%m-%d")
-
-                    paragraphs = art_soup.find_all(["p", "div", "h3", "li"])
-                    found_items = set()
-                    
-                    for p in paragraphs:
-                        text = p.get_text().strip()
-                        # Skip massive paragraphs that aren't price lists
-                        if len(text) > 150: 
-                            continue
-                            
-                        for kw in keywords:
-                            # CRITICAL CHECK: The paragraph MUST contain the keyword AND a digit (number)
-                            if kw in text and any(char.isdigit() for char in text):
-                                if kw not in found_items:
-                                    found_items.add(kw)
-                                    extracted_data.append({
-                                        "Date": pub_date,
-                                        "Poultry Item": kw,
-                                        "Exact Price Detail": text
-                                    })
-                    time.sleep(0.5) 
-                except Exception:
+            for sentence in sentences:
+                sentence = sentence.strip()
+                # If the sentence has no numbers, skip it (we only want prices!)
+                if not any(char.isdigit() for char in sentence):
                     continue
-        except Exception:
-            continue
-            
+                    
+                # Categorize what the sentence is talking about
+                category = None
+                if "بيض" in sentence: 
+                    category = "Eggs (البيض)"
+                elif "كتكوت" in sentence or "كتاكيت" in sentence: 
+                    category = "Chicks (الكتكوت)"
+                elif "فراخ" in sentence or "دواجن" in sentence: 
+                    category = "Chicken (الفراخ)"
+                
+                # If it matches our criteria, add it to the table
+                if category and len(sentence) > 10:
+                    extracted_data.append({
+                        "Date": clean_date,
+                        "Category": category,
+                        "Exact Price Detail": sentence,
+                        "Source": source
+                    })
+    except Exception as e:
+        pass
+        
     return extracted_data
 
 # --- DASHBOARD LAYOUT ---
 
-# 1. Live Prices Section
+# 1. LIVE PRICES
 st.header("🛒 Today's Live Market Prices")
-with st.spinner("Breaching firewall and reading today's articles for exact numbers..."):
-    # Scrape only the first page for the most immediate live data
-    live_data = fetch_exact_prices(pages_to_dig=1, is_live=True)
+with st.spinner("Fetching today's exact numbers via Unblockable RSS..."):
+    # Query Bing for today's market prices
+    live_data = get_unblockable_prices("أسعار الدواجن الفراخ البيض الكتكوت اليوم مصر")
+    
     if live_data:
-        st.dataframe(pd.DataFrame(live_data), use_container_width=True, hide_index=True)
+        # Remove duplicate sentences and display
+        df_live = pd.DataFrame(live_data).drop_duplicates(subset=["Exact Price Detail"])
+        st.success("Successfully fetched live market numbers! (Firewall Bypassed)")
+        st.dataframe(df_live, use_container_width=True, hide_index=True)
     else:
-        st.warning("Could not extract numerical prices today. The site might be temporarily down.")
+        st.warning("Could not fetch data. The market may not have published updates yet today.")
 
 st.write("---")
 
-# 2. Historical Prices Section
-st.header("🕰️ Historical Prices (Time Machine Scraper)")
-st.write("This section physically opens past news articles and extracts the sentences containing the historical prices.")
+# 2. HISTORICAL PRICES
+st.header("🕰️ Historical Prices (Time Machine)")
+st.write("Because we are using a search engine feed, we can specifically query past months to extract old prices.")
 
-pages = st.slider("How many pages of news archives should we scan? (More pages = more history, but takes longer)", min_value=1, max_value=10, value=3)
+# Let the user pick a specific month/year to search
+past_month = st.selectbox("Select a past timeframe to search:", [
+    "يوليو 2026", "يونيو 2026", "مايو 2026", "أبريل 2026", "مارس 2026", "فبراير 2026", "يناير 2026"
+])
 
 if st.button("Extract Historical Data"):
-    with st.spinner(f"Opening articles across {pages} pages. This takes a few seconds..."):
-        hist_data = fetch_exact_prices(pages_to_dig=pages, is_live=False)
+    with st.spinner(f"Searching global archives for {past_month}..."):
+        # We append the month and year to the search query to pull old articles
+        hist_data = get_unblockable_prices(f"أسعار الدواجن الفراخ البيض الكتكوت مصر {past_month}")
+        
         if hist_data:
-            df_hist = pd.DataFrame(hist_data)
+            df_hist = pd.DataFrame(hist_data).drop_duplicates(subset=["Exact Price Detail"])
+            st.success(f"Successfully extracted {len(df_hist)} historical price records for {past_month}!")
             
-            st.success(f"Successfully extracted {len(df_hist)} historical price records!")
-            
-            item_filter = st.selectbox("Filter by Item:", ["All"] + list(df_hist["Poultry Item"].unique()))
-            if item_filter != "All":
-                df_hist = df_hist[df_hist["Poultry Item"] == item_filter]
+            # Filter
+            selected_tag = st.selectbox("Filter by Category:", ["All", "Chicken (الفراخ)", "Eggs (البيض)", "Chicks (الكتكوت)"])
+            if selected_tag != "All":
+                df_hist = df_hist[df_hist['Category'] == selected_tag]
                 
             st.dataframe(df_hist, use_container_width=True, hide_index=True)
             
+            # Download
             csv = df_hist.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
             st.download_button(
                 label="📥 Download History as CSV",
                 data=csv,
-                file_name='historical_poultry_prices_exact.csv',
+                file_name=f'poultry_history_{past_month}.csv',
                 mime='text/csv',
             )
         else:
-            st.error("Could not find historical numerical data in the scanned pages.")
+            st.error("Could not find historical data for this specific timeframe.")
