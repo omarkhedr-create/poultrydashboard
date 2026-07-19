@@ -14,40 +14,49 @@ st.caption("This dashboard scrapes local agricultural news in real-time to track
 
 # --- SCRAPING FUNCTIONS ---
 
-@st.cache_data(ttl=600)  # Caches live data for 10 minutes
+@st.cache_data(ttl=600)  
 def fetch_live_prices():
     base_url = "https://www.elbalad.news"
     tag_url = f"{base_url}/tag/7576"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)"}
     prices_data = []
     
     try:
         res = requests.get(tag_url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        latest_art = soup.find("a", href=True, title=True)
-        if latest_art:
-            link = latest_art["href"] if latest_art["href"].startswith("http") else base_url + latest_art["href"]
-            art_res = requests.get(link, headers=headers, timeout=10)
+        
+        # SMART FIX: Only search for the first article that is actually about poultry
+        articles = soup.find_all("a", href=True)
+        target_link = None
+        for art in articles:
+            title_text = art.get_text()
+            if "دواجن" in title_text or "فراخ" in title_text or "بورصة" in title_text:
+                link = art["href"]
+                target_link = link if link.startswith("http") else base_url + link
+                break
+                
+        if target_link:
+            art_res = requests.get(target_link, headers=headers, timeout=10)
             art_soup = BeautifulSoup(art_res.text, "html.parser")
-            paragraphs = art_soup.find_all(["p", "div"])
+            paragraphs = art_soup.find_all(["p", "div", "li"])
             
             keywords = ["البيض الأبيض", "البيض الأحمر", "الكتكوت", "الفراخ البيضاء", "الفراخ البلدي"]
             found = set()
             for p in paragraphs:
-                text = p.get_text()
+                text = p.get_text().strip()
                 for kw in keywords:
                     if kw in text and any(c.isdigit() for c in text) and len(text) < 150:
                         if kw not in found:
                             found.add(kw)
-                            prices_data.append({"Poultry Item": kw, "Today's Price Detail": text.strip()})
+                            prices_data.append({"Poultry Item": kw, "Today's Price Detail": text})
     except Exception:
         pass
     return prices_data
 
-@st.cache_data(ttl=86400)  # Caches historical data for 24 hours so it doesn't slow down your app
+@st.cache_data(ttl=86400) 
 def fetch_historical_prices(pages_to_dig=5):
     base_url = "https://www.elbalad.news"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)"}
     historical_data = []
     keywords = ["البيض الأبيض", "البيض الأحمر", "الكتكوت", "الفراخ البيضاء", "الفراخ البلدي"]
 
@@ -58,14 +67,18 @@ def fetch_historical_prices(pages_to_dig=5):
             soup = BeautifulSoup(res.text, "html.parser")
             articles = soup.find_all("a", href=True)
             
+            # SMART FIX: Filter for relevant links only to avoid spamming the server
+            relevant_links = []
             for art in articles:
-                link = art["href"]
-                # Filter for news articles
-                if "/news/" not in link and len(link.split('/')) < 4:
-                    continue
-                    
-                full_link = link if link.startswith("http") else base_url + link
-                
+                title_text = art.get_text().strip()
+                if "دواجن" in title_text or "فراخ" in title_text or "بورصة" in title_text:
+                    link = art["href"]
+                    full_link = link if link.startswith("http") else base_url + link
+                    if full_link not in relevant_links:
+                        relevant_links.append(full_link)
+            
+            # Process only the top 2 relevant articles per page for maximum speed
+            for full_link in relevant_links[:2]:
                 try:
                     art_res = requests.get(full_link, headers=headers, timeout=5)
                     art_soup = BeautifulSoup(art_res.text, "html.parser")
@@ -89,8 +102,7 @@ def fetch_historical_prices(pages_to_dig=5):
                                         "Poultry Item": kw,
                                         "Historical Price": text
                                     })
-                    # Brief pause to respect the news server
-                    time.sleep(0.3) 
+                    time.sleep(0.2) 
                 except Exception:
                     continue
         except Exception:
@@ -100,41 +112,35 @@ def fetch_historical_prices(pages_to_dig=5):
 
 # --- DASHBOARD LAYOUT ---
 
-# 1. Live Prices Section
 st.header("🛒 Today's Live Market Prices")
 with st.spinner("Fetching today's latest prices..."):
     live_data = fetch_live_prices()
     if live_data:
         st.dataframe(pd.DataFrame(live_data), use_container_width=True, hide_index=True)
     else:
-        st.warning("Could not parse live prices at the moment. The news source may not have updated yet today.")
+        st.warning("Could not parse live prices at the moment. The news source may not have updated yet today or blocked the request.")
 
 st.write("---")
 
-# 2. Historical Prices Section
 st.header("🕰️ Historical Prices (Time Machine Scraper)")
 st.write("This section digs through past news archives to find older price announcements.")
 
-# Let the user choose how far back to dig using a slider
 pages = st.slider("How many pages of news archives should we scan?", min_value=1, max_value=10, value=3)
 
 if st.button("Extract Historical Data"):
-    with st.spinner(f"Flipping through {pages} pages of news archives. This may take a minute..."):
+    with st.spinner(f"Flipping through {pages} pages of news archives. This will only take a few seconds..."):
         hist_data = fetch_historical_prices(pages_to_dig=pages)
         if hist_data:
             df_hist = pd.DataFrame(hist_data)
             
-            # Show a filterable table
             st.success(f"Successfully extracted {len(df_hist)} historical price records!")
             
-            # Filter by specific poultry item
             item_filter = st.selectbox("Filter by Item:", ["All"] + list(df_hist["Poultry Item"].unique()))
             if item_filter != "All":
                 df_hist = df_hist[df_hist["Poultry Item"] == item_filter]
                 
             st.dataframe(df_hist, use_container_width=True, hide_index=True)
             
-            # Allow user to download this custom history directly from the dashboard
             csv = df_hist.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
             st.download_button(
                 label="📥 Download History as CSV",
