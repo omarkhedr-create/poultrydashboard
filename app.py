@@ -16,7 +16,7 @@ GOOGLE_API_URL = "https://script.google.com/a/macros/thndr.app/s/AKfycbwanyI7c9U
 # --- DATA FETCHING ---
 @st.cache_data(ttl=600)
 def fetch_poultry_prices():
-    if GOOGLE_API_URL == "egss":
+    if GOOGLE_API_URL == "uedsaasjklcbwkljblkqacqweascqw":
         st.error("⚠️ Setup needed: Please paste your Google Web App URL into line 13 of app.py!")
         return []
         
