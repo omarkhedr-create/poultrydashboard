@@ -1,7 +1,4 @@
-# Install the missing package with the required '!' prefix for Colab
-!pip install streamlit -q
 
-# Test if it worked
 import streamlit as st
 print("Streamlit successfully installed! 🎉")
 import yfinance as yf
