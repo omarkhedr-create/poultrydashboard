@@ -11,12 +11,12 @@ st.write(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')} (
 st.caption("Powered by Google Pipeline. This routes data requests through Google's cloud system to guarantee 100% firewall bypass.")
 
 # PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
-GOOGLE_API_URL = "https://script.google.com/a/macros/thndr.app/s/AKfycbxLnVX8NlfSjKkGzrzOD82cWcSdvB7vQtF5DKIBrNFr4N1V5CdY3aKjK2W9MZxTZkgWwg/exec"
+GOOGLE_API_URL = "https://script.google.com/a/macros/thndr.app/s/AKfycbyR8b0qJwriWUc5rqLmN3f11fcZpmI_zAl8T0OBqUmhft5tXfdVHMuzrdjAsjwTienLtQ/exec"
 
 # --- DATA FETCHING ---
 @st.cache_data(ttl=600)
 def fetch_poultry_prices():
-    if GOOGLE_API_URL == "https://script.google.com/a/macros/thndr.app/s/AKfycbxLnVX8NlfSjKkGzrzOD82cWcSdvB7vQtF5DKIBrNFr4N1V5CdY3aKjK2W9MZxTZkgWwg/exec":
+    if GOOGLE_API_URL == "https://script.google.com/a/macros/thndr.app/s/AKfycbyR8b0qJwriWUc5rqLmN3f11fcZpmI_zAl8T0OBqUmhft5tXfdVHMuzrdjAsjwTienLtQ/exec":
         st.error("⚠️ Setup needed: Please paste your Google Web App URL into line 13 of app.py!")
         return []
         
